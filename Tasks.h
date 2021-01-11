@@ -2,7 +2,7 @@
 #define MAX_TASKS 16
 #endif
 
-typedef unsigned long (*TaskFunction) ();
+typedef void (*TaskFunction) ();
 typedef struct Task {
     TaskFunction taskFunction;
     unsigned long nextCall; //If this is 0, then remove it no matter what.
@@ -43,12 +43,10 @@ void runTasks() {
 //        Serial.print(": ");
 //        Serial.println((int) queue[i], HEX);
         if (queue[i]->taskFunction != NULL and queue[i]->nextCall < millis() and queue[i]->nextCall != 0) {
-            unsigned long r = queue[i]->taskFunction();
+            queue[i]->taskFunction();
             if (queue[i]->repeat) //Repeating task, add interval to next call.
                 queue[i]->nextCall += queue[i]->interval;
-            else if (r != 0) //Queue function returned next call value. Set it.
-                queue[i]->nextCall = r;
-            else { //Queue function did not return next call value. Free memory.
+            else { // Free memory.
                 delete queue[i];
                 queue[i] = nullptr;
             }
