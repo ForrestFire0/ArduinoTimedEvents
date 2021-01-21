@@ -14,6 +14,7 @@ typedef void (*TaskFunctionLambda)(void *);
 typedef struct TaskFunctionLambdaStorage
 {
     TaskFunctionLambda lambda;
+    TaskFunctionLambda deleteMe;
     long lambdaAddress;
 } TaskFunctionLambdaStorage;
 
@@ -23,17 +24,22 @@ typedef union TaskFunction
     TaskFunctionFuncPtr funcPtr;
 } TaskFunction;
 
+// A template function that is used by name to generate function pointers. 
 template <typename T>
 void lambda_ptr_exec(T *v)
 {
     return (void)(*v)();
 }
 
+// A template function that is is used by name to generate functions that delete the lambda.
 template <typename T>
-TaskFunctionLambda lambda_ptr(__attribute__((unused)) T &v)
+void lambda_ptr_delete(T *v)
 {
-    return (TaskFunctionLambda)lambda_ptr_exec<T>;
+    delete v;
 }
+
+
+// Function takes a lambda and returns another function that can be called to delete the lambda.
 
 typedef struct Task
 {
@@ -78,24 +84,10 @@ byte setTimeout(T lambda, unsigned long timeout)
 
 //Complex timeout given the lambda as a pointer.
 template <typename T>
-byte setTimeout(T * lambda, unsigned long timeout)
+byte setTimeout(T *lambda, unsigned long timeout)
 {
-    TaskFunction *taskFunction = taskFunctionFromLambda(*lambda);
+    TaskFunction *taskFunction = taskFunctionFromLambda(lambda);
     return setTask(taskFunction, true, millis() + timeout, false, 0);
-}
-
-
-template <typename T>
-TaskFunction *taskFunctionFromLambda(T lambda)
-{
-    TaskFunctionLambda fp = lambda_ptr(lambda);
-    TaskFunction *taskFunction = new TaskFunction;
-    taskFunction->lambda = new TaskFunctionLambdaStorage;
-    taskFunction->lambda->lambda = fp;
-    taskFunction->lambda->lambdaAddress = (long)&lambda;
-    Serial.print("Saving lambda with address ");
-    Serial.println(taskFunction->lambda->lambdaAddress);
-    return taskFunction;
 }
 
 //Basic interval with function pointer.
@@ -108,7 +100,7 @@ byte setInterval(TaskFunctionFuncPtr f, unsigned long start, unsigned int interv
 
 //Complex interval given the lambda
 template <typename T>
-byte setInterval(T lambda, unsigned long start, unsigned long interval)
+byte setInterval(T *lambda, unsigned long start, unsigned long interval)
 {
     TaskFunction *taskFunction = taskFunctionFromLambda(lambda);
     return setTask(taskFunction, true, start + interval, true, interval);
@@ -121,16 +113,33 @@ byte setInterval(T lambda, unsigned int interval)
     return setInterval(lambda, millis(), interval);
 }
 
+template <typename T>
+TaskFunction *taskFunctionFromLambda(T *lambda)
+{   
+    TaskFunction *taskFunction = new TaskFunction;
+    taskFunction->lambda = new TaskFunctionLambdaStorage;
+    taskFunction->lambda->lambda = (TaskFunctionLambda)lambda_ptr_exec<T>;
+    taskFunction->lambda->deleteMe = (TaskFunctionLambda)lambda_ptr_delete<T>;
+    taskFunction->lambda->lambdaAddress = (long)lambda;
+    // Serial.print("Saving lambda with address ");
+    // Serial.println(taskFunction->lambda->lambdaAddress);
+    return taskFunction;
+}
+
 void deleteTask(byte i)
 {
     if (queue[i]->lambda)
-    { //If we are storing a lambda we need to free the pointer to the TaskFunctionLambdaStorage
+    { 
+        //If we are storing a lambda we need to free a lot of things
+        //First, the actual lambda. Delete it using the function from before.
+        queue[i]->taskFunction->lambda->deleteMe((void *)queue[i]->taskFunction->lambda->lambdaAddress);
+        // Next we need to delete the TaskFunctionLambdaStorage object
         delete queue[i]->taskFunction->lambda;
     }
     //Either way we need to delete task function itself.
     delete queue[i]->taskFunction;
 
-    //And then lastly of course we need to destroy the struct itself.
+    //And then lastly of course we need to destroy the main object itself.
     delete queue[i];
     queue[i] = nullptr;
 }
@@ -140,18 +149,18 @@ void runTasks()
     //    Serial.println(length);
     for (byte i = 0; i < MAX_TASKS; i++)
     {
-        //        Serial.println((uint16_t) queue[i].taskFunction, HEX);
-        //        Serial.print(i);
-        //        Serial.print(": ");
-        //        Serial.println((int) queue[i], HEX);
-        if (queue[i]->taskFunction != NULL && queue[i]->nextCall <= millis())
+        // delay(100);
+        // Serial.print(i);
+        // Serial.print(": ");
+        // Serial.println((long)queue[i], HEX);
+        if (queue[i] != NULL && queue[i]->nextCall <= millis())
         {
             if (queue[i]->lambda)
             {
                 // Hard bit. Do complicated bits.
                 queue[i]->taskFunction->lambda->lambda((void *)queue[i]->taskFunction->lambda->lambdaAddress);
-                Serial.print("Running lambda at address ");
-                Serial.println(queue[i]->taskFunction->lambda->lambdaAddress);
+                // Serial.print("Running L @ ");
+                // Serial.println(queue[i]->taskFunction->lambda->lambdaAddress);
             }
             else
             {
@@ -166,5 +175,4 @@ void runTasks()
             }
         }
     }
-    //    Serial.println();
 }
