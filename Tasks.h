@@ -24,7 +24,7 @@ typedef union TaskFunction
     TaskFunctionFuncPtr funcPtr;
 } TaskFunction;
 
-// A template function that is used by name to generate function pointers. 
+// A template function that is used by name to generate function pointers.
 template <typename T>
 void lambda_ptr_exec(T *v)
 {
@@ -37,7 +37,6 @@ void lambda_ptr_delete(T *v)
 {
     delete v;
 }
-
 
 // Function takes a lambda and returns another function that can be called to delete the lambda.
 
@@ -52,9 +51,9 @@ typedef struct Task
 
 Task *queue[MAX_TASKS];
 
-byte setTask(TaskFunction *f, bool lambda, unsigned long nextCall, bool repeat, unsigned int interval)
+uint8_t setTask(TaskFunction *f, bool lambda, unsigned long nextCall, bool repeat, unsigned int interval)
 {
-    for (byte i = 0; i < MAX_TASKS; i++)
+    for (uint8_t i = 0; i < MAX_TASKS; i++)
     {
         if (queue[i] == nullptr)
         { //This slot is empty
@@ -67,31 +66,23 @@ byte setTask(TaskFunction *f, bool lambda, unsigned long nextCall, bool repeat, 
 }
 
 //Basic timout given simple function pointer
-byte setTimeout(TaskFunctionFuncPtr f, unsigned long timeout)
+uint8_t setTimeout(TaskFunctionFuncPtr f, unsigned long timeout)
 {
     TaskFunction *taskFunction = new TaskFunction;
     taskFunction->funcPtr = f;
     return setTask(taskFunction, false, millis() + timeout, false, 0);
 }
 
-//Complex timout given lambda object as type T
-template <typename T>
-byte setTimeout(T lambda, unsigned long timeout)
-{
-    TaskFunction *taskFunction = taskFunctionFromLambda(lambda);
-    return setTask(taskFunction, true, millis() + timeout, false, 0);
-}
-
 //Complex timeout given the lambda as a pointer.
 template <typename T>
-byte setTimeout(T *lambda, unsigned long timeout)
+uint8_t setTimeout(T *lambda, unsigned long timeout)
 {
     TaskFunction *taskFunction = taskFunctionFromLambda(lambda);
     return setTask(taskFunction, true, millis() + timeout, false, 0);
 }
 
 //Basic interval with function pointer.
-byte setInterval(TaskFunctionFuncPtr f, unsigned long start, unsigned int interval)
+uint8_t setInterval(TaskFunctionFuncPtr f, unsigned long start, unsigned int interval)
 {
     TaskFunction *taskFunction = new TaskFunction;
     taskFunction->funcPtr = f;
@@ -100,7 +91,7 @@ byte setInterval(TaskFunctionFuncPtr f, unsigned long start, unsigned int interv
 
 //Complex interval given the lambda
 template <typename T>
-byte setInterval(T *lambda, unsigned long start, unsigned long interval)
+uint8_t setInterval(T *lambda, unsigned long start, unsigned long interval)
 {
     TaskFunction *taskFunction = taskFunctionFromLambda(lambda);
     return setTask(taskFunction, true, start + interval, true, interval);
@@ -108,14 +99,14 @@ byte setInterval(T *lambda, unsigned long start, unsigned long interval)
 
 //Catch all for when we just get the interval
 template <typename T>
-byte setInterval(T lambda, unsigned int interval)
+uint8_t setInterval(T *lambda, unsigned int interval)
 {
     return setInterval(lambda, millis(), interval);
 }
 
 template <typename T>
 TaskFunction *taskFunctionFromLambda(T *lambda)
-{   
+{
     TaskFunction *taskFunction = new TaskFunction;
     taskFunction->lambda = new TaskFunctionLambdaStorage;
     taskFunction->lambda->lambda = (TaskFunctionLambda)lambda_ptr_exec<T>;
@@ -126,10 +117,10 @@ TaskFunction *taskFunctionFromLambda(T *lambda)
     return taskFunction;
 }
 
-void deleteTask(byte i)
+void deleteTask(uint8_t i)
 {
     if (queue[i]->lambda)
-    { 
+    {
         //If we are storing a lambda we need to free a lot of things
         //First, the actual lambda. Delete it using the function from before.
         queue[i]->taskFunction->lambda->deleteMe((void *)queue[i]->taskFunction->lambda->lambdaAddress);
@@ -147,7 +138,7 @@ void deleteTask(byte i)
 void runTasks()
 {
     //    Serial.println(length);
-    for (byte i = 0; i < MAX_TASKS; i++)
+    for (uint8_t i = 0; i < MAX_TASKS; i++)
     {
         // delay(100);
         // Serial.print(i);

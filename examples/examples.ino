@@ -1,34 +1,38 @@
 #include <MemoryFree.h>
+//Macros I like
+#define pl(x) Serial.println(F(x));
+#define pt(x) Serial.print(F(x));
+#define pSize(x) {Serial.print(F("sizeof(" #x)); Serial.print(F(") = "));Serial.println(sizeof(x));}
 
-#define MAX_TASKS 80
+#define MAX_TASKS 24
 #include <Tasks.h>
-// Generic task function that is called
-
 
 void fm() {
-    Serial.print("Free Memory = ");
+    pt("Free Memory = ");
     Serial.println(freeMemory());
-    Serial.print(" @ ");
-    Serial.println(millis());
 }
-
 
 void setup ()
 {
     Serial.begin(115200);
-    Serial.print("Starting @ ");
-    Serial.println(millis());
-    setInterval(fm, 3000);
+    setTimeout(fm, 6000);
+    pt("Starting free memory: ");
+    fm();
+    setupAll();
+    pt("After setup: ");
+    fm();
+}
+void setupAll() {
+    for (byte i = 1; i <= 5; i++) {
+        setTimeout(new auto ([ = ]() -> void {
+            Serial.print("This is lambda ");
+            Serial.print(i);
+            Serial.print(" runnning at time ");
+            Serial.println(millis());
+        }), i * 1000);
+    }
 }
 
 void loop () {
-    if (Serial.available()) {
-        while (Serial.available()) Serial.read();
-        Serial.print("L");
-        setTimeout([]() -> void
-        {
-            Serial.println("Hello from timout");
-        }, 1000);
-    }
     runTasks();
 }
