@@ -10,6 +10,7 @@
 
 typedef void (*TaskFunctionFuncPtr)();
 typedef void (*TaskFunctionLambda)(void *);
+typedef bool (*ConditionFuncPtr)();
 
 typedef struct TaskFunctionLambdaStorage
 {
@@ -24,13 +25,23 @@ typedef union TaskFunction
     TaskFunctionFuncPtr funcPtr;
 } TaskFunction;
 
+typedef union Condition
+{
+    unsigned long nextCall;
+    struct Interval
+    {
+        unsigned long nextCall;
+        unsigned int interval;
+    } interval;
+    ConditionFuncPtr conditionFuncPtr;
+} Condition;
+
 // A template function that is used by name to generate function pointers.
 template <typename T>
 void lambda_ptr_exec(T *v)
 {
     return (void)(*v)();
 }
-
 // A template function that is is used by name to generate functions that delete the lambda.
 template <typename T>
 void lambda_ptr_delete(T *v)
@@ -38,26 +49,23 @@ void lambda_ptr_delete(T *v)
     delete v;
 }
 
-// Function takes a lambda and returns another function that can be called to delete the lambda.
-
 typedef struct Task
 {
     TaskFunction *taskFunction;
-    bool lambda;
-    unsigned long nextCall; //If this is 0, then remove it no matter what.
-    bool repeat;
-    unsigned int interval;
+    bool functionType; //false for function pointer, true for lambda pointer
+    Condition condition;
+    uint8_t conditionType; //1 for interval, 0 for timeout, 2 for Condition function
 } Task;
 
 Task *queue[MAX_TASKS];
 
-uint8_t setTask(TaskFunction *f, bool lambda, unsigned long nextCall, bool repeat, unsigned int interval)
+uint8_t setTask(TaskFunction *f, bool functionType, Condition c, uint8_t conditionType)
 {
     for (uint8_t i = 0; i < MAX_TASKS; i++)
     {
         if (queue[i] == nullptr)
         { //This slot is empty
-            queue[i] = new Task{f, lambda, nextCall, repeat, interval};
+            queue[i] = new Task{f, functionType, c, conditionType};
             return i;
         }
     }
@@ -70,7 +78,8 @@ uint8_t setTimeout(TaskFunctionFuncPtr f, unsigned long timeout)
 {
     TaskFunction *taskFunction = new TaskFunction;
     taskFunction->funcPtr = f;
-    return setTask(taskFunction, false, millis() + timeout, false, 0);
+    Condition condition = {(unsigned long)millis() + timeout};
+    return setTask(taskFunction, false, condition, 0);
 }
 
 //Complex timeout given the lambda as a pointer.
@@ -78,7 +87,17 @@ template <typename T>
 uint8_t setTimeout(T *lambda, unsigned long timeout)
 {
     TaskFunction *taskFunction = taskFunctionFromLambda(lambda);
-    return setTask(taskFunction, true, millis() + timeout, false, 0);
+    Condition condition = {(unsigned long)millis() + timeout};
+    return setTask(taskFunction, true, condition, 0);
+}
+
+uint8_t addEventListener(TaskFunctionFuncPtr f, ConditionFuncPtr c)
+{
+    TaskFunction *taskFunction = new TaskFunction;
+    taskFunction->funcPtr = f;
+    Condition condition;
+    condition.conditionFuncPtr = c;
+    return setTask(taskFunction, false, condition, 2);
 }
 
 //Basic interval with function pointer.
@@ -86,7 +105,9 @@ uint8_t setInterval(TaskFunctionFuncPtr f, unsigned long start, unsigned int int
 {
     TaskFunction *taskFunction = new TaskFunction;
     taskFunction->funcPtr = f;
-    return setTask(taskFunction, false, start + interval, true, interval);
+    Condition condition;
+    condition.interval = {start, interval};
+    return setTask(taskFunction, false, condition, 1);
 }
 
 //Complex interval given the lambda
@@ -94,14 +115,22 @@ template <typename T>
 uint8_t setInterval(T *lambda, unsigned long start, unsigned long interval)
 {
     TaskFunction *taskFunction = taskFunctionFromLambda(lambda);
-    return setTask(taskFunction, true, start + interval, true, interval);
+    Condition condition;
+    condition.interval = {start, interval};
+    return setTask(taskFunction, true, condition, 1);
 }
 
-//Catch all for when we just get the interval
+//For when we just get the interval
 template <typename T>
 uint8_t setInterval(T *lambda, unsigned int interval)
 {
-    return setInterval(lambda, millis(), interval);
+    return setInterval(lambda, millis()+interval, interval);
+}
+
+//For when we just get the interval
+uint8_t setInterval(TaskFunctionFuncPtr f, unsigned int interval)
+{
+    return setInterval(f, millis()+interval, interval);
 }
 
 template <typename T>
@@ -119,7 +148,7 @@ TaskFunction *taskFunctionFromLambda(T *lambda)
 
 void deleteTask(uint8_t i)
 {
-    if (queue[i]->lambda)
+    if (queue[i]->functionType)
     {
         //If we are storing a lambda we need to free a lot of things
         //First, the actual lambda. Delete it using the function from before.
@@ -140,29 +169,50 @@ void runTasks()
     //    Serial.println(length);
     for (uint8_t i = 0; i < MAX_TASKS; i++)
     {
-        // delay(100);
-        // Serial.print(i);
-        // Serial.print(": ");
-        // Serial.println((long)queue[i], HEX);
-        if (queue[i] != NULL && queue[i]->nextCall <= millis())
+        if (queue[i] != nullptr)
         {
-            if (queue[i]->lambda)
+            // delay(100);
+            // Serial.print(i);
+            // Serial.print(": ");
+            // Serial.println((long)queue[i], HEX);
+            bool run = false;
+            switch (queue[i]->conditionType)
             {
-                // Hard bit. Do complicated bits.
-                queue[i]->taskFunction->lambda->lambda((void *)queue[i]->taskFunction->lambda->lambdaAddress);
-                // Serial.print("Running L @ ");
-                // Serial.println(queue[i]->taskFunction->lambda->lambdaAddress);
+            case 0:
+                if (queue[i]->condition.nextCall <= millis())
+                    run = true;
+                break;
+            case 1:
+                if (queue[i]->condition.interval.nextCall <= millis())
+                    run = true;
+                break;
+            case 2:
+                run = queue[i]->condition.conditionFuncPtr();
+                break;
             }
-            else
+            if (run)
             {
-                //Easy one. Just simply run the function.
-                queue[i]->taskFunction->funcPtr();
-            }
-            if (queue[i]->repeat) //Repeating task, add interval to next call.
-                queue[i]->nextCall += queue[i]->interval;
-            else
-            { // Free memory. Needs to be updated to delete every nested thingy.
-                deleteTask(i);
+                if (queue[i]->functionType)
+                {
+                    // Hard bit. Do complicated bits.
+                    queue[i]->taskFunction->lambda->lambda((void *)queue[i]->taskFunction->lambda->lambdaAddress);
+                    // Serial.print("Running L @ ");
+                    // Serial.println(queue[i]->taskFunction->lambda->lambdaAddress);
+                }
+                else
+                {
+                    //Easy one. Just simply run the function.
+                    queue[i]->taskFunction->funcPtr();
+                }
+                switch (queue[i]->conditionType)
+                {
+                case 1: //Repeating task, add interval to next call.
+                    queue[i]->condition.interval.nextCall += queue[i]->condition.interval.interval;
+                    break;
+                case 0: // Free memory. Needs to be updated to delete every nested thingy.
+                    deleteTask(i);
+                    break;
+                }
             }
         }
     }
