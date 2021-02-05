@@ -100,6 +100,15 @@ uint8_t addEventListener(TaskFunctionFuncPtr f, ConditionFuncPtr c)
     return setTask(taskFunction, false, condition, 2);
 }
 
+template <typename T>
+uint8_t addEventListener(T *lambda, ConditionFuncPtr c)
+{
+    TaskFunction *taskFunction = taskFunctionFromLambda(lambda);
+    Condition condition;
+    condition.conditionFuncPtr = c;
+    return setTask(taskFunction, true, condition, 2);
+}
+
 //Basic interval with function pointer.
 uint8_t setInterval(TaskFunctionFuncPtr f, unsigned long start, unsigned int interval)
 {

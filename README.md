@@ -56,22 +56,28 @@ uint8_t setInterval(T *lambda, unsigned long start, unsigned long interval);
 Calls the function every interval milliseconds. Runs for the first time after the start plus interval.
 ```cpp
 template <typename T>
-uint8_t setInterval(T * lambda, unsigned int interval);
+uint8_t setInterval(/*Function pointer or lambda here*/, unsigned int interval);
+```
+Calls parameter 1 whenever parameter 2 is true. Parameter 2 must be a function pointer to a function with no parameters and that returns a boolean.
+```cpp
+uint8_t addEventListener(TaskFunctionFuncPtr f, ConditionFuncPtr c)
+/* or */
+template <typename T>
+uint8_t addEventListener(T *lambda, ConditionFuncPtr c)
 ```
 
 ### What is returned?
-The ID of that task. Use deleteTask(ID_HERE) to remove it from the tasks list. If you wanted something to run every 10 seconds for 100 times, you could use setInterval and then have a timeout that removed that task after 1000 seconds. Tasks that only run once (aka setTimeout) are automatically deleted after they run, so no need to clean them up.
+The ID of that task. Use deleteTask(ID) to remove it from the tasks list. If you wanted something to run every 10 seconds for 100 times, you could use setInterval and then have a timeout that removed that task after 1000 seconds. Tasks that only run once (aka setTimeout) are automatically deleted after they run, so no need to clean them up.
 
 Here is some example code on how to use it. You can pass in functions or lambdas.
 ```cpp
 #include <MemoryFree.h>
-//Macros I wanted
 #define pl(x) Serial.println(F(x));
 #define pt(x) Serial.print(F(x));
 #define pSize(x) {Serial.print(F("sizeof(" #x)); Serial.print(F(") = "));Serial.println(sizeof(x));}
 
-#define MAX_TASKS 24
 #include <Tasks.h>
+#define PIN 2
 
 void fm() {
     pt("Free Memory = ");
@@ -80,23 +86,29 @@ void fm() {
 
 void setup ()
 {
+    //Required setup
+    pinMode(PIN, INPUT_PULLUP);
     Serial.begin(115200);
-    setTimeout(fm, 6000);
+
+    //Setup something that prints the free memory every second
+    setInterval(fm, 0, 1000);
     pt("Starting free memory: ");
     fm();
-    setupAll();
+
+    // Add an event listener that should run 
+    byte x = addEventListener([]() {
+        Serial.println("Pin is high!");
+        delay(100);
+    } , []() -> boolean {return digitalRead(PIN);});
+
+    // Cancel the event listener using the ID of the old event listener after 20 seconds
+    setTimeout(new auto ([ = ]() {
+        pl("Stopping event listener");
+        deleteTask(x);
+    }), 20000);
+
     pt("After setup: ");
     fm();
-}
-void setupAll() {
-    for (byte i = 1; i <= 5; i++) {
-        setTimeout(new auto ([ = ]() -> void {
-            Serial.print("This is lambda ");
-            Serial.print(i);
-            Serial.print(" runnning at time ");
-            Serial.println(millis());
-        }), i * 1000);
-    }
 }
 
 void loop () {
